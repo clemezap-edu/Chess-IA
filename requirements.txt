@@ -1,0 +1,4 @@
+Librerías importadas:
+
+python-chess
+pygame
