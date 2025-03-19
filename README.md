@@ -28,7 +28,7 @@ Las librerías de ajedrez utilizadas están específicadas en el archivo "requir
 	import threading 
 </code></pre>
 
-## Modelos Utilizados:
+## 🖥️  Modelos Utilizados:
 Un módulo de ajedrez es un programa de ordenador que analzia posiciones de ajedrez, y transmite lo que calcula y considera son las mejores jugadas a disposición. Si los ordenadores fueran jugadores de ajedrez, los módulos serían sus cerebros.
 
 Los módulos de ajedrez son mucho más fuertes que los seres humanos, y los mejores módulos alcanzan un ELO de más de 3000 puntos. Asimismo, los módulos se vuelven más y más fuertes con cada año que pasa gracias a las mejoras y avances en hardware y software.
@@ -44,8 +44,8 @@ El código abierto de Crafty está escrito en ANSI C, y por tanto es muy versát
 
 
 
-## Referencias
+## 📋 Referencias
 
-- ![Lenguaje de programación Python](https://es.wikipedia.org/wiki/Python)
-- ![Módulos de programación](https://www.chess.com/es/terms/modulos-de-ajedrez)
-- ![Crafty](https://es.wikipedia.org/wiki/Crafty)
+- [Lenguaje de programación Python](https://es.wikipedia.org/wiki/Python)
+- [Módulos de programación](https://www.chess.com/es/terms/modulos-de-ajedrez)
+- [Crafty](https://es.wikipedia.org/wiki/Crafty)
