@@ -1,4 +1,3 @@
-
 import chess
 import subprocess
 import time
@@ -13,6 +12,7 @@ BLACK = (0, 0, 0)
 LIGHT_SQUARE = (240, 217, 181)
 DARK_SQUARE = (181, 136, 99)
 HIGHLIGHT = (247, 247, 105)
+CHECK_COLOR = (255, 0, 0, 128)  # Rojo semi-transparente para indicar jaque
 TEXT_COLOR = (0, 0, 0)
 
 
@@ -28,9 +28,19 @@ class ChessGame:
 
         # Fuente para el texto
         self.font = pygame.font.SysFont("Arial", 24)
+        self.small_font = pygame.font.SysFont("Arial", 16)
 
         # Tablero de ajedrez
         self.board = chess.Board()
+
+        # Historial de posiciones para detectar repeticiones
+        self.position_history = {}
+
+        # Contador de movimientos para la regla de los 50 movimientos
+        self.halfmove_clock = 0
+
+        # Historial de movimientos
+        self.move_history = []
 
         # Rutas de los motores - comprobar varias ubicaciones posibles
         self.stockfish_paths = [
@@ -76,8 +86,55 @@ class ChessGame:
 
         # Estado del juego
         self.info_text = "Iniciando juego..."
+        self.status_text = ""
         self.running = True
         self.last_move = None
+
+        # Cargar imágenes
+        self.load_piece_images()
+
+    def load_piece_images(self):
+        """Cargar imágenes de las piezas desde la carpeta 'pieces'"""
+        self.piece_images = {}
+
+        # Verificar si existe el directorio de piezas
+        pieces_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pieces")
+        if not os.path.exists(pieces_dir):
+            print(f"Directorio de piezas no encontrado en {pieces_dir}")
+            print("Usando representación de texto para las piezas")
+            return
+
+        try:
+            # Mapeo de piezas a archivos de imagen
+            piece_files = {
+                'P': 'white_pawn.png',
+                'R': 'white_rook.png',
+                'N': 'white_knight.png',
+                'B': 'white_bishop.png',
+                'Q': 'white_queen.png',
+                'K': 'white_king.png',
+                'p': 'black_pawn.png',
+                'r': 'black_rook.png',
+                'n': 'black_knight.png',
+                'b': 'black_bishop.png',
+                'q': 'black_queen.png',
+                'k': 'black_king.png'
+            }
+
+            for piece, file_name in piece_files.items():
+                file_path = os.path.join(pieces_dir, file_name)
+                if os.path.exists(file_path):
+                    image = pygame.image.load(file_path)
+                    # Escalar la imagen al tamaño del cuadrado
+                    image = pygame.transform.scale(image, (self.square_size, self.square_size))
+                    self.piece_images[piece] = image
+                else:
+                    print(f"Imagen no encontrada: {file_path}")
+
+            print(f"Se cargaron {len(self.piece_images)} imágenes de piezas")
+        except Exception as e:
+            print(f"Error al cargar imágenes: {e}")
+            # Si hay error, usaremos la representación de texto
 
     def draw_board(self):
         # Dibujar el tablero
@@ -93,19 +150,14 @@ class ChessGame:
 
                 # Coordenadas
                 if col == 0:
-                    text = self.font.render(str(8 - row), True, TEXT_COLOR if color == LIGHT_SQUARE else WHITE)
+                    text = self.small_font.render(str(8 - row), True, TEXT_COLOR if color == LIGHT_SQUARE else WHITE)
                     self.screen.blit(text, (5, y + 5))
                 if row == 7:
-                    text = self.font.render(chr(97 + col), True, TEXT_COLOR if color == LIGHT_SQUARE else WHITE)
+                    text = self.small_font.render(chr(97 + col), True, TEXT_COLOR if color == LIGHT_SQUARE else WHITE)
                     self.screen.blit(text, (x + self.square_size - 15, self.screen_height - 800 + 5))
 
     def draw_pieces(self):
         # Dibujar las piezas
-        piece_symbols = {
-            chess.PAWN: 'P', chess.ROOK: 'R', chess.KNIGHT: 'N',
-            chess.BISHOP: 'B', chess.QUEEN: 'Q', chess.KING: 'K'
-        }
-
         for square in chess.SQUARES:
             piece = self.board.piece_at(square)
             if piece:
@@ -114,23 +166,39 @@ class ChessGame:
                 x = col * self.square_size
                 y = row * self.square_size
 
-                # Dibujar pieza como texto con círculo de fondo
-                symbol = piece_symbols[piece.piece_type]
-                text_color = BLACK if not piece.color else WHITE
-                bg_color = WHITE if not piece.color else BLACK
+                # Si tenemos imágenes cargadas, usarlas
+                if hasattr(self, 'piece_images') and self.piece_images:
+                    piece_symbol = piece.symbol()
+                    if piece_symbol in self.piece_images:
+                        self.screen.blit(self.piece_images[piece_symbol], (x, y))
+                    else:
+                        self.draw_text_piece(piece, x, y)
+                else:
+                    self.draw_text_piece(piece, x, y)
 
-                # Círculo de fondo
-                pygame.draw.circle(
-                    self.screen,
-                    bg_color,
-                    (x + self.square_size // 2, y + self.square_size // 2),
-                    self.square_size // 3
-                )
+    def draw_text_piece(self, piece, x, y):
+        # Dibujar pieza como texto con círculo de fondo
+        piece_symbols = {
+            chess.PAWN: 'P', chess.ROOK: 'R', chess.KNIGHT: 'N',
+            chess.BISHOP: 'B', chess.QUEEN: 'Q', chess.KING: 'K'
+        }
 
-                # Dibujar el símbolo
-                text = self.font.render(symbol, True, text_color)
-                text_rect = text.get_rect(center=(x + self.square_size // 2, y + self.square_size // 2))
-                self.screen.blit(text, text_rect)
+        symbol = piece_symbols[piece.piece_type]
+        text_color = BLACK if not piece.color else WHITE
+        bg_color = WHITE if not piece.color else BLACK
+
+        # Círculo de fondo
+        pygame.draw.circle(
+            self.screen,
+            bg_color,
+            (x + self.square_size // 2, y + self.square_size // 2),
+            self.square_size // 3
+        )
+
+        # Dibujar el símbolo
+        text = self.font.render(symbol, True, text_color)
+        text_rect = text.get_rect(center=(x + self.square_size // 2, y + self.square_size // 2))
+        self.screen.blit(text, text_rect)
 
     def highlight_last_move(self):
         # Resaltar el último movimiento
@@ -152,6 +220,20 @@ class ChessGame:
             y_to = row_to * self.square_size
             pygame.draw.rect(self.screen, HIGHLIGHT, pygame.Rect(x_to, y_to, self.square_size, self.square_size), 4)
 
+        # Resaltar casilla del rey en jaque
+        if self.board.is_check():
+            king_square = self.board.king(self.board.turn)
+            if king_square is not None:
+                col = chess.square_file(king_square)
+                row = 7 - chess.square_rank(king_square)
+                x = col * self.square_size
+                y = row * self.square_size
+
+                # Crear superficie con transparencia para indicar jaque
+                s = pygame.Surface((self.square_size, self.square_size), pygame.SRCALPHA)
+                s.fill(CHECK_COLOR)
+                self.screen.blit(s, (x, y))
+
     def update_display(self):
         # Limpiar pantalla
         self.screen.fill(WHITE)
@@ -161,9 +243,20 @@ class ChessGame:
         self.highlight_last_move()
         self.draw_pieces()
 
-        # Mostrar información
+        # Mostrar información principal
         info_surface = self.font.render(self.info_text, True, BLACK)
         self.screen.blit(info_surface, (10, self.screen_height - 40))
+
+        # Mostrar estado adicional (jaque, reglas, etc.)
+        if self.status_text:
+            status_surface = self.small_font.render(self.status_text, True, BLACK)
+            self.screen.blit(status_surface, (10, self.screen_height - 70))
+
+        # Mostrar último movimiento en notación algebraica
+        if self.move_history:
+            last_move_text = f"Último: {self.move_history[-1]}"
+            last_move_surface = self.small_font.render(last_move_text, True, BLACK)
+            self.screen.blit(last_move_surface, (self.screen_width - 150, self.screen_height - 70))
 
         # Actualizar pantalla
         pygame.display.flip()
@@ -308,6 +401,100 @@ class ChessGame:
             print(f"Error al obtener movimiento de crafty: {e}")
             return None
 
+    def update_game_state(self, move):
+        """Actualiza el estado del juego tras un movimiento"""
+        # Actualizar el contador de movimientos para la regla de 50 movimientos
+        if self.board.is_capture(move) or self.board.piece_at(move.from_square).piece_type == chess.PAWN:
+            self.halfmove_clock = 0
+        else:
+            self.halfmove_clock += 1
+
+        # Actualizar historial de posiciones para detectar repeticiones
+        fen_position = self.board.fen().split(' ')[0]  # Solo la posición, no el turno ni otros datos
+        if fen_position in self.position_history:
+            self.position_history[fen_position] += 1
+        else:
+            self.position_history[fen_position] = 1
+
+        # Guardar el movimiento en el historial
+        san_move = self.board.san(move)
+        move_number = (len(self.move_history) // 2) + 1
+
+        if self.board.turn == chess.BLACK:  # Si el turno es negro, el movimiento lo hizo blanco
+            self.move_history.append(f"{move_number}.{san_move}")
+        else:  # Si el turno es blanco, el movimiento lo hizo negro
+            self.move_history.append(f"{move_number}...{san_move}")
+
+        # Realizar el movimiento
+        self.board.push(move)
+
+        # Actualizar el estado de juego
+        self.update_status_text()
+
+    def update_status_text(self):
+        """Actualiza el texto de estado con información sobre la situación del juego"""
+        status = []
+
+        # Verificar jaque
+        if self.board.is_check():
+            status.append("JAQUE")
+
+        # Verificar jaque mate o ahogado
+        if self.board.is_checkmate():
+            status.append("JAQUE MATE")
+        elif self.board.is_stalemate():
+            status.append("TABLAS POR AHOGADO")
+
+        # Verificar repetición de posición
+        current_pos = self.board.fen().split(' ')[0]
+        if current_pos in self.position_history and self.position_history[current_pos] >= 3:
+            status.append(f"REPETICIÓN ({self.position_history[current_pos]})")
+
+        # Verificar regla de 50 movimientos
+        if self.halfmove_clock >= 100:  # 50 movimientos completos = 100 medios movimientos
+            status.append("REGLA 50 MOVIMIENTOS")
+
+        # Verificar material insuficiente
+        if self.board.is_insufficient_material():
+            status.append("MATERIAL INSUFICIENTE")
+
+        # Actualizar text
+        self.status_text = " | ".join(status)
+
+    def check_game_over_reason(self):
+        """Verifica si el juego ha terminado y devuelve la razón"""
+        if self.board.is_checkmate():
+            return "Jaque mate"
+        elif self.board.is_stalemate():
+            return "Tablas por ahogado"
+        elif self.board.is_insufficient_material():
+            return "Tablas por material insuficiente"
+        elif self.halfmove_clock >= 100:
+            return "Tablas por regla de 50 movimientos"
+
+        current_pos = self.board.fen().split(' ')[0]
+        if current_pos in self.position_history and self.position_history[current_pos] >= 3:
+            return "Tablas por repetición triple de posición"
+
+        return None
+
+    def is_game_over_custom(self):
+        """Verifica si el juego ha terminado según reglas de ajedrez"""
+        # Verificar fin de juego según python-chess
+        if self.board.is_game_over():
+            return True
+
+        # Verificar regla de 50 movimientos
+        if self.halfmove_clock >= 100:
+            return True
+
+        # Verificar repetición triple
+        current_pos = self.board.fen().split(' ')[0]
+        if current_pos in self.position_history and self.position_history[current_pos] >= 3:
+            return True
+
+        return False
+
     def start_game(self):
         try:
             print("Iniciando juego...")
@@ -318,7 +505,7 @@ class ChessGame:
             clock = pygame.time.Clock()
             current_player = "Stockfish"
 
-            while not self.board.is_game_over() and self.running:
+            while not self.is_game_over_custom() and self.running:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         self.running = False
@@ -363,11 +550,10 @@ class ChessGame:
 
                         # Realizar movimiento
                         self.last_move = move
-                        san_move = self.board.san(move)
-                        self.board.push(move)
+                        self.update_game_state(move)
 
-                        move_text = f"{san_move}"
-                        self.info_text = f"Último movimiento: {move_text} | Turno: {current_player}"
+                        # Actualizar información
+                        self.info_text = f"Último: {self.move_history[-1]} | Turno: {current_player}"
                         self.update_display()
 
                         # Pausa para ver el movimiento
@@ -384,7 +570,7 @@ class ChessGame:
                             import random
                             move = random.choice(legal_moves)
                             self.last_move = move
-                            self.board.push(move)
+                            self.update_game_state(move)
                             self.info_text = f"Recuperado con movimiento aleatorio"
                             self.update_display()
                             time.sleep(1)
@@ -395,8 +581,10 @@ class ChessGame:
                 clock.tick(30)
 
             # Fin del juego
-            if self.board.is_game_over():
+            if self.is_game_over_custom():
+                game_over_reason = self.check_game_over_reason()
                 result = self.board.result()
+
                 if result == "1-0":
                     winner = "Stockfish (blancas)"
                 elif result == "0-1":
@@ -405,7 +593,17 @@ class ChessGame:
                     winner = "Empate"
 
                 self.info_text = f"Fin del juego: {result} - Ganador: {winner}"
+                if game_over_reason:
+                    self.status_text = f"Razón: {game_over_reason}"
                 self.update_display()
+
+                print(f"Juego terminado: {result}")
+                print(f"Razón: {game_over_reason}")
+                print(f"Ganador: {winner}")
+                print("Historial de movimientos:")
+                for move in self.move_history:
+                    print(move, end=" ")
+                print("\n")
 
                 # Esperar antes de salir
                 waiting = True
